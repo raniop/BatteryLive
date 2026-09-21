@@ -67,6 +67,64 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
             guard let s = self else { return }
             s.regen(reload: s.popover.isShown)
         }
+        // בדיקת עדכונים: בהפעלה + כל 6 שעות
+        checkForUpdate()
+        Timer.scheduledTimer(withTimeInterval: 21600, repeats: true) { [weak self] _ in self?.checkForUpdate() }
+    }
+
+    // ── עדכון אוטומטי מ-GitHub ──
+    let updateManifestURL = "https://raw.githubusercontent.com/raniop/BatteryLive/main/latest.json"
+    var availableUpdate: (version: String, url: String)?
+
+    func currentVersion() -> String {
+        (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String) ?? "1.0"
+    }
+    func isNewer(_ a: String, than b: String) -> Bool {
+        let x = a.split(separator: ".").map { Int($0) ?? 0 }
+        let y = b.split(separator: ".").map { Int($0) ?? 0 }
+        for i in 0..<max(x.count, y.count) {
+            let xi = i < x.count ? x[i] : 0, yi = i < y.count ? y[i] : 0
+            if xi != yi { return xi > yi }
+        }
+        return false
+    }
+
+    func checkForUpdate(manual: Bool = false) {
+        guard let url = URL(string: updateManifestURL) else { return }
+        var req = URLRequest(url: url); req.cachePolicy = .reloadIgnoringLocalCacheData; req.timeoutInterval = 15
+        URLSession.shared.dataTask(with: req) { [weak self] data, _, _ in
+            guard let s = self else { return }
+            guard let data = data,
+                  let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let ver = obj["version"] as? String,
+                  let purl = obj["url"] as? String else {
+                if manual { DispatchQueue.main.async { s.notify("לא ניתן לבדוק עדכונים כרגע") } }
+                return
+            }
+            DispatchQueue.main.async {
+                if s.isNewer(ver, than: s.currentVersion()) {
+                    s.availableUpdate = (ver, purl)
+                    s.fire("update", "עדכון זמין ⬆︎", "גרסה \(ver) זמינה. לחץ על הווידג'ט → \"עדכן לגרסה \(ver)\".")
+                } else {
+                    s.availableUpdate = nil
+                    if manual { s.notify("אתה מעודכן (גרסה \(s.currentVersion())) ✓") }
+                }
+            }
+        }.resume()
+    }
+    @objc func checkForUpdateManual() { checkForUpdate(manual: true) }
+
+    @objc func installUpdate() {
+        guard let up = availableUpdate, let url = URL(string: up.url) else { return }
+        notify("מוריד עדכון \(up.version)…")
+        URLSession.shared.downloadTask(with: url) { [weak self] tmp, _, _ in
+            guard let s = self else { return }
+            guard let tmp = tmp else { DispatchQueue.main.async { s.notify("ההורדה נכשלה") }; return }
+            let dest = FileManager.default.temporaryDirectory.appendingPathComponent("BatteryLive-Update.pkg")
+            try? FileManager.default.removeItem(at: dest)
+            do { try FileManager.default.moveItem(at: tmp, to: dest) } catch { DispatchQueue.main.async { s.notify("שגיאה בהורדה") }; return }
+            DispatchQueue.main.async { NSWorkspace.shared.open(dest) }   // פותח את המתקין המאושר
+        }.resume()
     }
 
     var chartFile = ""
@@ -294,11 +352,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
     // ── תפריט (קליק ימני) ──
     func showMenu() {
         let m = NSMenu()
+        if let up = availableUpdate {
+            let it = actionItem("⬆︎ עדכן לגרסה \(up.version)", #selector(installUpdate))
+            it.attributedTitle = rtl("⬆︎ עדכן לגרסה \(up.version)", bold: true, color: .systemGreen)
+            m.addItem(it)
+            m.addItem(.separator())
+        }
         m.addItem(actionItem("📊 הצג גרף סוללה", #selector(togglePopover)))
         m.addItem(actionItem("⚡︎ עצור את מה שהכי מעמיס (\(topname))", #selector(killTop)))
         m.addItem(actionItem("סגור סימולטורים מיותרים", #selector(closeSims)))
         m.addItem(actionItem("ניקוי מלא", #selector(doClean)))
         m.addItem(actionItem("רענן עכשיו", #selector(manualRefresh)))
+        m.addItem(actionItem("בדוק עדכונים", #selector(checkForUpdateManual)))
         m.addItem(.separator())
         m.addItem(actionItem("יציאה", #selector(quit)))
         statusItem.menu = m
