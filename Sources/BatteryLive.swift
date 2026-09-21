@@ -31,6 +31,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
 
     // ניטור אוטומטי — זמני התרעה אחרונים (throttle)
     var lastAlert: [String: Date] = [:]
+    var alertsEnabled = true   // ניתן להשתקה מהתפריט (נשמר ב-UserDefaults)
 
     let protectedNames = ["WindowServer","kernel_task","launchd","logind","loginwindow",
         "mds","mds_stores","mdbulkimport","mdworker","mdsync","spotlight","Spotlight",
@@ -39,6 +40,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
         "bluetoothd","powerd","hidd","opendirectoryd","syslogd","configd"]
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        alertsEnabled = (UserDefaults.standard.object(forKey: "alertsEnabled") as? Bool) ?? true
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         statusItem.button?.title = "🔋…"
         statusItem.button?.target = self
@@ -275,6 +277,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
 
     // מתריע פעם ב-5 דקות לכל סוג
     func fire(_ key: String, _ title: String, _ text: String) {
+        guard alertsEnabled else { return }          // התראות מושתקות
         let now = Date()
         if let last = lastAlert[key], now.timeIntervalSince(last) < 300 { return }
         lastAlert[key] = now
@@ -364,6 +367,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
         m.addItem(actionItem("ניקוי מלא", #selector(doClean)))
         m.addItem(actionItem("רענן עכשיו", #selector(manualRefresh)))
         m.addItem(actionItem("בדוק עדכונים", #selector(checkForUpdateManual)))
+        m.addItem(actionItem(alertsEnabled ? "🔕 השתק התראות" : "🔔 הפעל התראות", #selector(toggleAlerts)))
         m.addItem(.separator())
         m.addItem(actionItem("יציאה", #selector(quit)))
         statusItem.menu = m
@@ -439,6 +443,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
     }
 
     @objc func manualRefresh() { refresh() }
+    @objc func toggleAlerts() {
+        alertsEnabled.toggle()
+        UserDefaults.standard.set(alertsEnabled, forKey: "alertsEnabled")
+        notify(alertsEnabled ? "התראות הופעלו 🔔" : "התראות הושתקו 🔕")
+    }
     @objc func quit() { NSApplication.shared.terminate(nil) }
 }
 
