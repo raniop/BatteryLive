@@ -9,6 +9,17 @@ def run(cmd):
     except Exception:
         return ""
 
+# גרסת האפליקציה מה-Info.plist
+def app_version():
+    try:
+        import plistlib
+        p = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "Info.plist")
+        with open(p, "rb") as f:
+            return plistlib.load(f).get("CFBundleShortVersionString", "?")
+    except Exception:
+        return "?"
+VERSION = app_version()
+
 # ── אייקונים מוטמעים (SVG, בסגנון Tabler) ──
 ICONS = {
  "battery": ('<rect x="3" y="8" width="15" height="8" rx="2"/><path d="M20 11v2"/>', False),
@@ -313,6 +324,7 @@ doc = f"""<!DOCTYPE html>
   </div>
 
   <div class="foot">{ic("shield","var(--ok)",14)} ניטור אוטומטי פעיל · מתריע על חום, צניחות וסימולטורים</div>
+  <div style="text-align:center;font-size:10px;color:var(--muted);margin-top:6px;">Battery Live · גרסה {VERSION}</div>
 <script>function act(x){{try{{window.webkit.messageHandlers.act.postMessage(x);}}catch(e){{}}}}</script>
 </body></html>"""
 

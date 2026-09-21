@@ -1,5 +1,5 @@
 {
-  "version": "1.0",
+  "version": "1.1",
   "url": "https://github.com/raniop/BatteryLive/raw/main/dist/BatteryLive-Installer.pkg",
-  "notes": "גרסה ראשונה — כוללת עדכון אוטומטי, אייקון סוללה דינמי, גרף סשן, וניטור אוטומטי."
+  "notes": "1.1 — מספר גרסה בתחתית החלון, השתקת התראות, ועדכון אוטומטי."
 }
