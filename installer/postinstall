@@ -1,0 +1,33 @@
+#!/bin/zsh
+# postinstall — מגדיר הפעלה אוטומטית עבור המשתמש המחובר
+CONSOLE_USER=$(stat -f %Su /dev/console)
+USER_UID=$(id -u "$CONSOLE_USER" 2>/dev/null)
+APP="/Applications/BatteryLive.app"
+
+# הסרת 'הסגר' של macOS
+xattr -dr com.apple.quarantine "$APP" 2>/dev/null
+
+if [ -n "$CONSOLE_USER" ] && [ "$CONSOLE_USER" != "root" ] && [ -n "$USER_UID" ]; then
+  LA_DIR="/Users/$CONSOLE_USER/Library/LaunchAgents"
+  PLIST="$LA_DIR/com.raniophir.batterylive.plist"
+  mkdir -p "$LA_DIR"
+  cat > "$PLIST" <<'PL'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.raniophir.batterylive</string>
+  <key>ProgramArguments</key><array><string>/Applications/BatteryLive.app/Contents/MacOS/BatteryLive</string></array>
+  <key>RunAtLoad</key><true/>
+  <key>ProcessType</key><string>Interactive</string>
+  <key>LimitLoadToSessionType</key><string>Aqua</string>
+</dict>
+</plist>
+PL
+  chown "$CONSOLE_USER":staff "$PLIST"
+  # טעינה והפעלה בתוך ה-session של המשתמש
+  launchctl asuser "$USER_UID" launchctl bootout gui/"$USER_UID"/com.raniophir.batterylive 2>/dev/null
+  launchctl asuser "$USER_UID" launchctl bootstrap gui/"$USER_UID" "$PLIST" 2>/dev/null
+  launchctl asuser "$USER_UID" launchctl kickstart -k gui/"$USER_UID"/com.raniophir.batterylive 2>/dev/null
+fi
+exit 0

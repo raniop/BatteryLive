@@ -1,0 +1,6 @@
+build/
+*.o
+.DS_Store
+BatteryLive_DevID.key
+BatteryLive_DevID.csr
+*.p12
