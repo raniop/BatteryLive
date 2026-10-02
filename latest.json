@@ -1,5 +1,5 @@
 {
-  "version": "1.1",
+  "version": "1.2",
   "url": "https://github.com/raniop/BatteryLive/raw/main/dist/BatteryLive-Installer.pkg",
-  "notes": "1.1 — מספר גרסה בתחתית החלון, השתקת התראות, ועדכון אוטומטי."
+  "notes": "1.2 — מנוע Swift נייטיב (עובד בכל מק, בלי תלות ב-python), תיקון החלון הריק, ושם האפליקציה הנכון ב-Login Items."
 }

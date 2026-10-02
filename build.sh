@@ -15,9 +15,8 @@ lipo -create build/BL_arm build/BL_x86 -output "$APP/Contents/MacOS/BatteryLive"
 chmod +x "$APP/Contents/MacOS/BatteryLive"
 
 echo "→ Copying resources…"
-cp Resources/chart.py Resources/stats.sh Resources/closesims.sh Resources/AppIcon.icns "$APP/Contents/Resources/"
+cp Resources/AppIcon.icns "$APP/Contents/Resources/"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
-chmod +x "$APP/Contents/Resources/"*.sh
 rm -f build/BL_arm build/BL_x86
 
 if [ -n "$SIGN_ID" ]; then
