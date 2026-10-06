@@ -185,6 +185,17 @@ func diskFreeKB() -> Int {
     }
     return 0
 }
+func diskTotalKB() -> Int {
+    if let v = try? URL(fileURLWithPath: NSHomeDirectory()).resourceValues(forKeys: [.volumeTotalCapacityKey]),
+       let b = v.volumeTotalCapacity { return b / 1024 }
+    let out = runCmd("/bin/df", ["-k", NSHomeDirectory()])
+    let lines = out.split(separator: "\n")
+    if lines.count >= 2 {
+        let f = lines[1].split(whereSeparator: { $0 == " " })
+        if f.count >= 2 { return Int(f[1]) ?? 0 }
+    }
+    return 0
+}
 
 struct CleanCat {
     let key: String, title: String, note: String
@@ -300,6 +311,7 @@ let ICONS: [String: (String, Bool)] = [
  "heart": ("<path d=\"M12 20l-7.5-7.3a4.3 4.3 0 0 1 6.1-6L12 7.3l1.4-0.6a4.3 4.3 0 0 1 6.1 6z\"/>", false),
  "down": ("<path d=\"M3 7l6 6 4-4 8 8\"/><path d=\"M14 17h7v-7\"/>", false),
  "clock": ("<circle cx=\"12\" cy=\"12\" r=\"9\"/><path d=\"M12 7v5l3 2\"/>", false),
+ "disk": ("<ellipse cx=\"12\" cy=\"5\" rx=\"8\" ry=\"3\"/><path d=\"M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5\"/><path d=\"M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3\"/>", false),
 ]
 func ic(_ name: String, _ color: String = "currentColor", _ size: Int = 16) -> String {
     let (inner, filled) = ICONS[name] ?? ICONS["cpu"]!
@@ -375,6 +387,12 @@ func buildChartHTML() -> String {
     if let ss = sessionSince { periodTxt += " · " + nowDF.string(from: ss) }
     let lowestPct = rows.map { $0.2 }.min() ?? 0
     let healthColor = b.health >= 80 ? "var(--ok)" : "var(--warn)"
+
+    // מצב הדיסק
+    let dFree = diskFreeKB(), dTotal = diskTotalKB()
+    let dUsedPct = dTotal > 0 ? Int((Double(dTotal - dFree) / Double(dTotal) * 100).rounded()) : 0
+    let dBarCol = dFree < 10 * 1024 * 1024 ? "var(--danger)" : (dFree < 30 * 1024 * 1024 ? "var(--warn)" : "var(--accent)")
+    let diskHtml = "<div class=\"live\" style=\"display:block;cursor:pointer;\" onclick=\"act('disk')\"><div style=\"display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;\"><span style=\"display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:600;\">\(ic("disk","var(--accent)",15)) דיסק</span><span style=\"font-size:12px;color:var(--muted);\">\(humanKB(dFree)) פנוי · \(humanKB(dTotal)) סה\"כ</span></div><div style=\"height:7px;background:var(--grid);border-radius:4px;overflow:hidden;\"><div style=\"width:\(dUsedPct)%;height:100%;background:\(dBarCol);\"></div></div></div>"
 
     var remHtml = ""
     if let rm = b.remMin, rm > 0 {
@@ -466,6 +484,7 @@ func buildChartHTML() -> String {
     <div class="live">\(ic("bolt",wattCol,16))<div><div class="v" style="color:\(wattCol)">\(wattVal)</div><div class="l">\(wattLbl)</div></div></div>
     <div class="live">\(ic("cpu","var(--accent)",16))<div><div class="v">\(loadS) / \(cores)</div><div class="l">עומס מעבד</div></div></div>
   </div>
+  <div style="margin-bottom:12px;">\(diskHtml)</div>
   \(sinceHtml)
   <div class="sec" style="display:flex;justify-content:space-between;"><span>אפליקציות פעילות</span><span>צריכת מעבד</span></div>
   <div class="box">\(appRows)</div>

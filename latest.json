@@ -1,5 +1,5 @@
 {
-  "version": "1.3",
+  "version": "1.4",
   "url": "https://github.com/raniop/BatteryLive/raw/main/dist/BatteryLive-Installer.pkg",
-  "notes": "1.3 — ניקוי דיסק ופינוי מקום: סורק DerivedData, מטמונים, תמיכת מכשירים, לוגים, סימולטורים ישנים וסל אשפה, ומנקה בבחירה עם אישור."
+  "notes": "1.4 — אינדיקטור דיסק בחלון הראשי (בר צבעוני עם מקום פנוי) + חלון ניקוי מקום מלא."
 }
