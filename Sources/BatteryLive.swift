@@ -161,6 +161,125 @@ func closeExtraSims() -> Int {
 }
 
 // ════════════════════════════════════════════════════════════
+//  ניקוי דיסק (native)
+// ════════════════════════════════════════════════════════════
+func dirSizeKB(_ path: String) -> Int {
+    guard FileManager.default.fileExists(atPath: path) else { return 0 }
+    let out = runCmd("/usr/bin/du", ["-sk", path])
+    let first = out.split(whereSeparator: { $0 == "\t" || $0 == " " }).first.map(String.init) ?? "0"
+    return Int(first) ?? 0
+}
+func humanKB(_ kb: Int) -> String {
+    let u = ["KB", "MB", "GB", "TB"]; var v = Double(max(0, kb)); var i = 0
+    while v >= 1024 && i < u.count - 1 { v /= 1024; i += 1 }
+    return String(format: i == 0 ? "%.0f %@" : "%.1f %@", v, u[i])
+}
+func diskFreeKB() -> Int {
+    if let v = try? URL(fileURLWithPath: NSHomeDirectory()).resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey]),
+       let b = v.volumeAvailableCapacityForImportantUsage { return Int(b / 1024) }
+    let out = runCmd("/bin/df", ["-k", NSHomeDirectory()])
+    let lines = out.split(separator: "\n")
+    if lines.count >= 2 {
+        let f = lines[1].split(whereSeparator: { $0 == " " })
+        if f.count >= 4 { return Int(f[3]) ?? 0 }
+    }
+    return 0
+}
+
+struct CleanCat {
+    let key: String, title: String, note: String
+    let paths: [String]
+    let danger: Bool, simctl: Bool, defaultOn: Bool
+    var sizeKB: Int = 0
+}
+func cleanupCategories() -> [CleanCat] {
+    let h = NSHomeDirectory()
+    var cats: [CleanCat] = [
+        CleanCat(key: "derived", title: "Xcode DerivedData", note: "קבצי בנייה זמניים — נבנים מחדש אוטומטית",
+                 paths: ["\(h)/Library/Developer/Xcode/DerivedData"], danger: false, simctl: false, defaultOn: true),
+        CleanCat(key: "devsupport", title: "Xcode Device Support", note: "תמיכת מכשירים — יורד מחדש בחיבור",
+                 paths: ["\(h)/Library/Developer/Xcode/iOS DeviceSupport", "\(h)/Library/Developer/Xcode/watchOS DeviceSupport", "\(h)/Library/Developer/Xcode/tvOS DeviceSupport"], danger: false, simctl: false, defaultOn: true),
+        CleanCat(key: "simcache", title: "מטמון סימולטורים", note: "CoreSimulator Caches",
+                 paths: ["\(h)/Library/Developer/CoreSimulator/Caches"], danger: false, simctl: false, defaultOn: true),
+        CleanCat(key: "caches", title: "מטמון אפליקציות", note: "~/Library/Caches — אפליקציות בונות מחדש",
+                 paths: ["\(h)/Library/Caches"], danger: false, simctl: false, defaultOn: true),
+        CleanCat(key: "logs", title: "קבצי לוג", note: "~/Library/Logs",
+                 paths: ["\(h)/Library/Logs"], danger: false, simctl: false, defaultOn: true),
+        CleanCat(key: "simunavail", title: "סימולטורים לא זמינים", note: "מחיקת סימולטורים ישנים שאינם בשימוש",
+                 paths: [], danger: false, simctl: true, defaultOn: true),
+        CleanCat(key: "archives", title: "Xcode Archives", note: "ארכיוני אפליקציות שבנית — מחק רק אם אינך צריך",
+                 paths: ["\(h)/Library/Developer/Xcode/Archives"], danger: true, simctl: false, defaultOn: false),
+        CleanCat(key: "trash", title: "סל האשפה", note: "⚠️ מוחק לצמיתות",
+                 paths: ["\(h)/.Trash"], danger: true, simctl: false, defaultOn: false),
+    ]
+    for i in cats.indices where !cats[i].simctl {
+        cats[i].sizeKB = cats[i].paths.reduce(0) { $0 + dirSizeKB($1) }
+    }
+    return cats
+}
+
+func cleanScanningHTML(msg: String = "סורק את הדיסק…") -> String {
+    return "<!DOCTYPE html><html lang=\"he\" dir=\"rtl\"><head><meta charset=\"utf-8\"></head><body style=\"margin:0;background:#10161f;color:#eef2f6;font-family:-apple-system,Arial;display:flex;align-items:center;justify-content:center;height:100vh;\"><div style=\"text-align:center;\"><div style=\"font-size:34px;margin-bottom:10px;\">🧹</div><div style=\"font-size:15px;color:#7c8798;\">\(msg)</div></div></body></html>"
+}
+
+func buildCleanupHTML(_ cats: [CleanCat], freeKB: Int, freedKB: Int?) -> String {
+    let totalDefault = cats.filter { $0.defaultOn && !$0.simctl }.reduce(0) { $0 + $1.sizeKB }
+    var rowsHtml = ""
+    for c in cats {
+        let sizeStr = c.simctl ? "—" : humanKB(c.sizeKB)
+        let checked = c.defaultOn ? "checked" : ""
+        let titleColor = c.danger ? "var(--danger)" : "var(--text)"
+        rowsHtml += "<label class=\"row\"><input type=\"checkbox\" value=\"\(c.key)\" data-kb=\"\(c.sizeKB)\" \(checked) onchange=\"upd()\"><div class=\"info\"><div class=\"t\" style=\"color:\(titleColor)\">\(c.title)</div><div class=\"n\">\(c.note)</div></div><div class=\"sz\">\(sizeStr)</div></label>"
+    }
+    var freedBanner = ""
+    if let fr = freedKB { freedBanner = "<div class=\"ok\">✓ פונו \(humanKB(fr)) מהדיסק</div>" }
+    let doc = """
+<!DOCTYPE html><html lang="he" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root{--bg:#10161f;--sub:#141c26;--card:#1a2330;--text:#eef2f6;--muted:#7c8798;--grid:#26303d;--accent:#0a84ff;--ok:#34c759;--danger:#ff453a;}
+  *{box-sizing:border-box;} body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,'SF Pro Display',Arial,sans-serif;padding:14px;}
+  h1{font-size:17px;margin:0 0 2px;}
+  .free{font-size:12px;color:var(--muted);margin-bottom:12px;}
+  .ok{background:rgba(52,199,89,.15);border:0.5px solid rgba(52,199,89,.4);color:var(--ok);border-radius:8px;padding:9px;font-size:13px;font-weight:600;text-align:center;margin-bottom:12px;}
+  .row{display:flex;align-items:center;gap:10px;background:var(--sub);border-radius:8px;padding:10px 12px;margin-bottom:6px;cursor:pointer;}
+  .row input{width:17px;height:17px;flex:none;accent-color:var(--accent);}
+  .info{flex:1;min-width:0;} .info .t{font-size:14px;font-weight:600;} .info .n{font-size:11px;color:var(--muted);}
+  .sz{font-size:14px;font-weight:700;color:var(--muted);white-space:nowrap;}
+  .bar{display:flex;align-items:center;justify-content:space-between;margin-top:12px;gap:8px;}
+  .total{font-size:13px;color:var(--muted);} .total b{color:var(--text);font-size:15px;}
+  .btns{display:flex;gap:8px;}
+  button{border:none;border-radius:8px;padding:9px 16px;font-size:13px;font-weight:600;font-family:inherit;cursor:pointer;}
+  .clean{background:var(--accent);color:#fff;} .rescan{background:var(--card);color:var(--muted);border:0.5px solid var(--grid);}
+  button:active{transform:scale(.97);}
+  .note{font-size:10px;color:var(--muted);text-align:center;margin-top:10px;}
+</style></head><body>
+  <h1>🧹 ניקוי דיסק</h1>
+  <div class="free">פנוי בדיסק: \(humanKB(freeKB))</div>
+  \(freedBanner)
+  \(rowsHtml)
+  <div class="bar">
+    <div class="total">נבחר לניקוי: <b id="tot">\(humanKB(totalDefault))</b></div>
+    <div class="btns">
+      <button class="rescan" onclick="rescan()">רענן</button>
+      <button class="clean" onclick="clean()">נקה נבחרים</button>
+    </div>
+  </div>
+  <div class="note">הפריטים נבנים מחדש אוטומטית. מחיקה בטוחה (למעט פריטים באדום).</div>
+<script>
+  function human(kb){var u=['KB','MB','GB','TB'],v=kb,i=0;while(v>=1024&&i<3){v/=1024;i++;}return (i==0?v.toFixed(0):v.toFixed(1))+' '+u[i];}
+  function upd(){var t=0;document.querySelectorAll('input:checked').forEach(function(c){t+=parseInt(c.dataset.kb||0);});document.getElementById('tot').textContent=human(t);}
+  function gather(){return [].slice.call(document.querySelectorAll('input:checked')).map(function(c){return c.value;}).join(',');}
+  function clean(){var k=gather();if(!k)return;window.webkit.messageHandlers.cleanAct.postMessage('clean:'+k);}
+  function rescan(){window.webkit.messageHandlers.cleanAct.postMessage('rescan');}
+  upd();
+</script></body></html>
+"""
+    let out = (NSTemporaryDirectory() as NSString).appendingPathComponent("battery_cleanup.html")
+    try? doc.write(toFile: out, atomically: true, encoding: .utf8)
+    return out
+}
+
+// ════════════════════════════════════════════════════════════
 //  אייקוני SVG מוטמעים (בסגנון Tabler)
 // ════════════════════════════════════════════════════════════
 let ICONS: [String: (String, Bool)] = [
@@ -365,6 +484,7 @@ func buildChartHTML() -> String {
     <button class="btn acc" onclick="act('refresh')">\(ic("refresh","currentColor",15)) רענן</button>
     <button class="btn n" onclick="act('clean')">\(ic("clean","currentColor",15)) ניקוי מלא</button>
   </div>
+  <button class="btn acc" style="width:100%;margin-bottom:10px;" onclick="act('disk')">\(ic("clean","currentColor",15)) נקה מקום בדיסק</button>
   <div class="foot">\(ic("shield","var(--ok)",14)) ניטור אוטומטי פעיל · מתריע על חום, צניחות וסימולטורים</div>
   <div style="text-align:center;font-size:10px;color:var(--muted);margin-top:6px;">Battery Live · גרסה \(version)</div>
 <script>function act(x){try{window.webkit.messageHandlers.act.postMessage(x);}catch(e){}}</script>
@@ -383,6 +503,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
     var timer: Timer?
     var popover: NSPopover!
     var webView: WKWebView!
+    var cleanWindow: NSWindow?
+    var cleanWebView: WKWebView!
+    var lastCats: [CleanCat] = []
 
     var soc = 0, watts = 0, health = 0, cycles = 0, cores = 10, topcpu = 0, booted = 0, toppid = 0
     var charging = false
@@ -625,12 +748,95 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
     }
     func userContentController(_ ucc: WKUserContentController, didReceive message: WKScriptMessage) {
         guard let cmd = message.body as? String else { return }
+        if message.name == "cleanAct" {
+            if cmd == "rescan" { openCleanup() }
+            else if cmd.hasPrefix("clean:") {
+                let keys = String(cmd.dropFirst(6)).split(separator: ",").map(String.init)
+                confirmAndClean(keys)
+            }
+            return
+        }
         switch cmd {
         case "kill": killTop()
         case "sims": closeSims(); refresh(); regen(reload: true)
         case "refresh": refresh(); regen(reload: true)
         case "clean": doClean()
+        case "disk": openCleanup()
         default: break
+        }
+    }
+
+    // ── חלון ניקוי דיסק ──
+    func ensureCleanWindow() {
+        if cleanWindow != nil { return }
+        let cfg = WKWebViewConfiguration()
+        cfg.userContentController.add(self, name: "cleanAct")
+        cleanWebView = WKWebView(frame: NSRect(x: 0, y: 0, width: 470, height: 600), configuration: cfg)
+        let win = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 470, height: 600),
+                           styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
+        win.title = "ניקוי דיסק — Battery Live"
+        win.contentView = cleanWebView
+        win.center(); win.isReleasedWhenClosed = false
+        win.minSize = NSSize(width: 420, height: 440)
+        cleanWindow = win
+    }
+
+    @objc func openCleanup() {
+        ensureCleanWindow()
+        cleanWebView.loadHTMLString(cleanScanningHTML(), baseURL: nil)
+        cleanWindow?.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let s = self else { return }
+            let cats = cleanupCategories()
+            let freeKB = diskFreeKB()
+            DispatchQueue.main.async {
+                s.lastCats = cats
+                let f = buildCleanupHTML(cats, freeKB: freeKB, freedKB: nil)
+                s.cleanWebView.loadFileURL(URL(fileURLWithPath: f), allowingReadAccessTo: URL(fileURLWithPath: f).deletingLastPathComponent())
+            }
+        }
+    }
+
+    func confirmAndClean(_ keys: [String]) {
+        let selected = lastCats.filter { keys.contains($0.key) }
+        guard !selected.isEmpty else { return }
+        let totalKB = selected.reduce(0) { $0 + $1.sizeKB }
+        let hasDanger = selected.contains { $0.danger }
+        let a = NSAlert()
+        a.messageText = "לנקות \(humanKB(totalKB))?"
+        var info = "ייּמחקו: " + selected.map { $0.title }.joined(separator: " · ")
+        if hasDanger { info += "\n\n⚠️ כולל פריטים שנמחקים לצמיתות (סל אשפה / ארכיונים)." }
+        a.informativeText = info
+        a.alertStyle = hasDanger ? .critical : .warning
+        a.addButton(withTitle: "נקה"); a.addButton(withTitle: "ביטול")
+        NSApp.activate(ignoringOtherApps: true)
+        guard a.runModal() == .alertFirstButtonReturn else { return }
+
+        cleanWebView.loadHTMLString(cleanScanningHTML(msg: "מנקה…"), baseURL: nil)
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let s = self else { return }
+            var freedKB = 0
+            for cat in selected {
+                if cat.simctl {
+                    if devToolsPresent() { _ = runCmd("/usr/bin/xcrun", ["simctl", "delete", "unavailable"]) }
+                    continue
+                }
+                freedKB += cat.sizeKB
+                for p in cat.paths {
+                    if let items = try? FileManager.default.contentsOfDirectory(atPath: p) {
+                        for it in items { try? FileManager.default.removeItem(atPath: p + "/" + it) }
+                    }
+                }
+            }
+            let cats = cleanupCategories()
+            let freeKB = diskFreeKB()
+            DispatchQueue.main.async {
+                s.lastCats = cats
+                let f = buildCleanupHTML(cats, freeKB: freeKB, freedKB: freedKB)
+                s.cleanWebView.loadFileURL(URL(fileURLWithPath: f), allowingReadAccessTo: URL(fileURLWithPath: f).deletingLastPathComponent())
+                s.notify("פונו \(humanKB(freedKB)) מהדיסק 🧹")
+            }
         }
     }
 
@@ -659,6 +865,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
         m.addItem(actionItem("⚡︎ עצור את מה שהכי מעמיס (\(topname))", #selector(killTop)))
         m.addItem(actionItem("סגור סימולטורים מיותרים", #selector(closeSims)))
         m.addItem(actionItem("ניקוי מלא", #selector(doClean)))
+        m.addItem(actionItem("🧹 נקה מקום בדיסק", #selector(openCleanup)))
         m.addItem(actionItem("רענן עכשיו", #selector(manualRefresh)))
         m.addItem(actionItem("בדוק עדכונים", #selector(checkForUpdateManual)))
         m.addItem(actionItem(alertsEnabled ? "🔕 השתק התראות" : "🔔 הפעל התראות", #selector(toggleAlerts)))
