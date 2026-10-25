@@ -159,6 +159,12 @@ func closeExtraSims() -> Int {
     for id in ids.dropFirst() { _ = runCmd("/usr/bin/xcrun", ["simctl", "shutdown", id]); closed += 1 }
     return closed
 }
+// מספר הסימולטורים הלא-זמינים (iOS שלהם הוסר) — רק אלה נמחקים ב-"delete unavailable"
+func unavailableSimCount() -> Int {
+    guard devToolsPresent() else { return 0 }
+    let out = runCmd("/usr/bin/xcrun", ["simctl", "list", "devices"])
+    return out.split(separator: "\n").filter { $0.lowercased().contains("unavailable") }.count
+}
 
 // ════════════════════════════════════════════════════════════
 //  ניקוי דיסק (native)
@@ -198,10 +204,13 @@ func diskTotalKB() -> Int {
 }
 
 struct CleanCat {
-    let key: String, title: String, note: String
+    let key: String, title: String
+    var note: String
     let paths: [String]
-    let danger: Bool, simctl: Bool, defaultOn: Bool
+    let danger: Bool, simctl: Bool
+    var defaultOn: Bool
     var sizeKB: Int = 0
+    var count: Int = -1
 }
 func cleanupCategories() -> [CleanCat] {
     let h = NSHomeDirectory()
@@ -210,26 +219,41 @@ func cleanupCategories() -> [CleanCat] {
                  paths: ["\(h)/Library/Developer/Xcode/DerivedData"], danger: false, simctl: false, defaultOn: true),
         CleanCat(key: "devsupport", title: "Xcode Device Support", note: "תמיכת מכשירים — יורד מחדש בחיבור",
                  paths: ["\(h)/Library/Developer/Xcode/iOS DeviceSupport", "\(h)/Library/Developer/Xcode/watchOS DeviceSupport", "\(h)/Library/Developer/Xcode/tvOS DeviceSupport"], danger: false, simctl: false, defaultOn: true),
+        CleanCat(key: "xctest", title: "קלוני בדיקות (XCTestDevices)", note: "סימולטורים זמניים שנוצרים לבדיקות — נוצרים מחדש אוטומטית",
+                 paths: ["\(h)/Library/Developer/XCTestDevices"], danger: false, simctl: false, defaultOn: true),
         CleanCat(key: "simcache", title: "מטמון סימולטורים", note: "CoreSimulator Caches",
                  paths: ["\(h)/Library/Developer/CoreSimulator/Caches"], danger: false, simctl: false, defaultOn: true),
         CleanCat(key: "caches", title: "מטמון אפליקציות", note: "~/Library/Caches — אפליקציות בונות מחדש",
                  paths: ["\(h)/Library/Caches"], danger: false, simctl: false, defaultOn: true),
         CleanCat(key: "logs", title: "קבצי לוג", note: "~/Library/Logs",
                  paths: ["\(h)/Library/Logs"], danger: false, simctl: false, defaultOn: true),
-        CleanCat(key: "simunavail", title: "סימולטורים לא זמינים", note: "מחיקת סימולטורים ישנים שאינם בשימוש",
+        CleanCat(key: "simunavail", title: "סימולטורים ישנים (לא זמינים)", note: "רק כאלה שה-iOS שלהם הוסר — הסימולטורים הפעילים שלך בטוחים",
                  paths: [], danger: false, simctl: true, defaultOn: true),
+        CleanCat(key: "simerase", title: "איפוס נתוני סימולטורים", note: "מוחק אפליקציות ונתונים מתוך הסימולטורים (לא את הסימולטורים עצמם) — יותקנו מחדש בהרצה הבאה",
+                 paths: ["\(h)/Library/Developer/CoreSimulator/Devices"], danger: true, simctl: true, defaultOn: false),
         CleanCat(key: "archives", title: "Xcode Archives", note: "ארכיוני אפליקציות שבנית — מחק רק אם אינך צריך",
                  paths: ["\(h)/Library/Developer/Xcode/Archives"], danger: true, simctl: false, defaultOn: false),
         CleanCat(key: "trash", title: "סל האשפה", note: "⚠️ מוחק לצמיתות",
                  paths: ["\(h)/.Trash"], danger: true, simctl: false, defaultOn: false),
     ]
-    for i in cats.indices where !cats[i].simctl {
-        cats[i].sizeKB = cats[i].paths.reduce(0) { $0 + dirSizeKB($1) }
+    // סריקת גדלים במקביל (du על תיקיות ענק איטי — ריצה מקבילה מקצרת משמעותית)
+    var sizes = [Int](repeating: 0, count: cats.count)
+    var counts = [Int](repeating: -1, count: cats.count)
+    DispatchQueue.concurrentPerform(iterations: cats.count) { i in
+        if cats[i].key == "simunavail" {
+            counts[i] = unavailableSimCount()
+        } else {
+            sizes[i] = cats[i].paths.reduce(0) { $0 + dirSizeKB($1) }
+        }
+    }
+    for i in cats.indices {
+        cats[i].sizeKB = sizes[i]
+        if counts[i] >= 0 { cats[i].count = counts[i]; cats[i].defaultOn = counts[i] > 0 }
     }
     return cats
 }
 
-func cleanScanningHTML(msg: String = "סורק את הדיסק…") -> String {
+func cleanScanningHTML(msg: String = "סורק את הדיסק… (עד דקה לתיקיות גדולות)") -> String {
     return "<!DOCTYPE html><html lang=\"he\" dir=\"rtl\"><head><meta charset=\"utf-8\"></head><body style=\"margin:0;background:#10161f;color:#eef2f6;font-family:-apple-system,Arial;display:flex;align-items:center;justify-content:center;height:100vh;\"><div style=\"text-align:center;\"><div style=\"font-size:34px;margin-bottom:10px;\">🧹</div><div style=\"font-size:15px;color:#7c8798;\">\(msg)</div></div></body></html>"
 }
 
@@ -237,7 +261,7 @@ func buildCleanupHTML(_ cats: [CleanCat], freeKB: Int, freedKB: Int?) -> String 
     let totalDefault = cats.filter { $0.defaultOn && !$0.simctl }.reduce(0) { $0 + $1.sizeKB }
     var rowsHtml = ""
     for c in cats {
-        let sizeStr = c.simctl ? "—" : humanKB(c.sizeKB)
+        let sizeStr = c.key == "simunavail" ? (c.count > 0 ? "\(c.count) ישנים" : "אין") : humanKB(c.sizeKB)
         let checked = c.defaultOn ? "checked" : ""
         let titleColor = c.danger ? "var(--danger)" : "var(--text)"
         rowsHtml += "<label class=\"row\"><input type=\"checkbox\" value=\"\(c.key)\" data-kb=\"\(c.sizeKB)\" \(checked) onchange=\"upd()\"><div class=\"info\"><div class=\"t\" style=\"color:\(titleColor)\">\(c.title)</div><div class=\"n\">\(c.note)</div></div><div class=\"sz\">\(sizeStr)</div></label>"
@@ -837,14 +861,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
             guard let s = self else { return }
             var freedKB = 0
             for cat in selected {
-                if cat.simctl {
+                switch cat.key {
+                case "simunavail":
                     if devToolsPresent() { _ = runCmd("/usr/bin/xcrun", ["simctl", "delete", "unavailable"]) }
-                    continue
-                }
-                freedKB += cat.sizeKB
-                for p in cat.paths {
-                    if let items = try? FileManager.default.contentsOfDirectory(atPath: p) {
-                        for it in items { try? FileManager.default.removeItem(atPath: p + "/" + it) }
+                case "simerase":
+                    if devToolsPresent() {
+                        _ = runCmd("/usr/bin/xcrun", ["simctl", "shutdown", "all"])
+                        _ = runCmd("/usr/bin/xcrun", ["simctl", "erase", "all"])
+                        freedKB += cat.sizeKB
+                    }
+                default:
+                    freedKB += cat.sizeKB
+                    for p in cat.paths {
+                        if let items = try? FileManager.default.contentsOfDirectory(atPath: p) {
+                            for it in items { try? FileManager.default.removeItem(atPath: p + "/" + it) }
+                        }
                     }
                 }
             }

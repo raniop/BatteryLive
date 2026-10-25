@@ -1,5 +1,5 @@
 {
-  "version": "1.4",
+  "version": "1.5",
   "url": "https://github.com/raniop/BatteryLive/raw/main/dist/BatteryLive-Installer.pkg",
-  "notes": "1.4 — אינדיקטור דיסק בחלון הראשי (בר צבעוני עם מקום פנוי) + חלון ניקוי מקום מלא."
+  "notes": "1.5 — ניקוי דיסק משופר: מצא XCTestDevices (קלוני בדיקות, ~64GB) ואיפוס נתוני סימולטורים (~68GB), סריקה מקבילה מהירה, וחיווי כמה סימולטורים ישנים יימחקו."
 }
