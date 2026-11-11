@@ -1,5 +1,5 @@
 {
-  "version": "1.5",
+  "version": "1.6",
   "url": "https://github.com/raniop/BatteryLive/raw/main/dist/BatteryLive-Installer.pkg",
-  "notes": "1.5 — ניקוי דיסק משופר: מצא XCTestDevices (קלוני בדיקות, ~64GB) ואיפוס נתוני סימולטורים (~68GB), סריקה מקבילה מהירה, וחיווי כמה סימולטורים ישנים יימחקו."
+  "notes": "1.6 — בריאות הסוללה מוצגת עד 100% מקסימום (סוללה חדשה כבר לא תראה 103%)."
 }

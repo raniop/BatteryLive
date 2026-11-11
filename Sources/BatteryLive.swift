@@ -52,7 +52,7 @@ func batteryData() -> BattInfo {
     let ampU = UInt64(rx("\"Amperage\"\\s*=\\s*(\\d+)", ior) ?? "0") ?? 0
     let amp = Int64(bitPattern: ampU)
     b.watts = Int((abs(Double(amp)) * Double(volt) / 1_000_000).rounded())
-    b.health = design > 0 ? Int((Double(fullc) / Double(design) * 100).rounded()) : 0
+    b.health = design > 0 ? min(100, Int((Double(fullc) / Double(design) * 100).rounded())) : 0
     let batt = runCmd("/usr/bin/pmset", ["-g", "batt"])
     b.soc = rxInt("(\\d+)%", batt) ?? 0
     b.charging = batt.contains("AC Power")
